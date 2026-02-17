@@ -14,6 +14,9 @@ from tenacity import retry, stop_after_delay, wait_random_exponential, retry_if_
 RETRYABLE_EXCEPTIONS = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted, NotFound)
 
 class Subscriber:
+    """
+    Subscriber class to listen to messages from a Pub/Sub topic.
+    """
     def __init__(self) -> None:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger('Subscriber')
@@ -37,9 +40,9 @@ class Subscriber:
         except KeyboardInterrupt:
             self.logger.info(f'Stopping subscriber...')
             future_listener.cancel()
-        except Exception as e: # improve error handling
-            self.logger.error(f'Unexpected Error: {e}')
-            raise e
+        except Exception:
+            self.logger.exception(f'Unexpected Error.')
+            raise
 
     def _get_subscription_path(self, project_id: str, topic_id: str, topic_path: str):
         subscription_id = f'{topic_id}-sub' # Assumes the subscription name will be `<topic_id>-sub`

@@ -11,6 +11,9 @@ from google.api_core.retry import Retry, if_exception_type
 
 
 class Publisher:
+    """
+    Publisher class to publish messages to a Pub/Sub topic.
+    """
     def __init__(self) -> None:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
         self.logger = logging.getLogger('Publisher')
@@ -18,24 +21,14 @@ class Publisher:
 
     def publish_message(self, project_id: str, topic_id: str, message: str | dict) -> str:
         try:
-            topic_path = self._get_topic_path(project_id=project_id, topic_id=topic_id)
+            topic_path = self.client.topic_path(project_id, topic_id) # assumes topic exists
             future = self.client.publish(topic_path, message.encode("utf-8"), retry=self._retry_strategy())
             published_message_id = future.result(timeout=10) # parametrize timeout
             self.logger.info(f'Message published with ID: {published_message_id}')
             return published_message_id
-        except Exception as e: # improve error handling
-            self.logger.error(f'Error publishing message: {e}') 
-            raise e
-
-    def _get_topic_path(self, project_id: str, topic_id: str) -> str:
-        topic_path = self.client.topic_path(project_id, topic_id)
-        try:
-            self.client.create_topic(name=topic_path)
-            self.logger.info(f'Topic created: {topic_path}')
-            return topic_path
-        except AlreadyExists:
-            self.logger.info(f'Topic already exists: {topic_path}')
-            return topic_path
+        except Exception:
+            self.logger.exception(f'Unexpected error publishing message') 
+            raise
 
     def _retry_strategy(self) -> Retry:
         retryable_exceptions = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted)
