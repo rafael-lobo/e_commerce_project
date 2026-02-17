@@ -1,3 +1,4 @@
+import json
 import logging
 from google.cloud import pubsub_v1
 from google.api_core.exceptions import (
@@ -19,10 +20,15 @@ class Publisher:
         self.logger = logging.getLogger('Publisher')
         self.client = pubsub_v1.PublisherClient()
 
-    def publish_message(self, project_id: str, topic_id: str, message: str | dict) -> str:
+    def publish_message(self, project_id: str, topic_id: str, message: str | dict | list) -> str:
         try:
             topic_path = self.client.topic_path(project_id, topic_id) # assumes topic exists
-            future = self.client.publish(topic_path, message.encode("utf-8"), retry=self._retry_strategy())
+            future = self.client.publish(
+                topic_path,
+                self._serialize_message(message),
+                content_type="application/json",
+                retry=self._retry_strategy()
+            )
             published_message_id = future.result(timeout=10) # parametrize timeout
             self.logger.info(f'Message published with ID: {published_message_id}')
             return published_message_id
@@ -41,6 +47,14 @@ class Publisher:
             on_error=(lambda e: f"Retryable error {e}, trying again...")
         )
 
+    def _serialize_message(self, message: str | dict | list) -> bytes:
+        if isinstance(message, (dict, list)):
+            return json.dumps(message).encode("utf-8")
+        if isinstance(message, str):
+            return message.encode("utf-8")
+        raise TypeError(f'Message must be a string or a JSON, got {type(message)}')
+
+
 if __name__ == "__main__":
     import os
     import random
@@ -48,7 +62,12 @@ if __name__ == "__main__":
     print(f'Project ID: {project_id}') 
     topic_id =os.environ.get("TOPIC_ID")
     print(f'Topic ID: {topic_id}')
-    message = f'Random message nº{random.randint(1, 10_000)}'
+    message = {
+        "id": random.randint(1, 10_000),
+        "name": f"Product {random.randint(1, 10_000)}",
+        "price": random.randint(1, 100),
+        "stock": random.randint(1, 1_000)
+    }
     print(f'Message: {message}')
     publisher = Publisher()
     result = publisher.publish_message(project_id=project_id, topic_id=topic_id, message=message)
