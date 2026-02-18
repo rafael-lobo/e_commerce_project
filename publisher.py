@@ -24,13 +24,15 @@ class Publisher:
         try:
             topic_path = self.client.topic_path(project_id, topic_id) # assumes topic exists
             future = self.client.publish(
-                topic_path,
-                self._serialize_message(message),
+                topic=topic_path,
+                data=self._serialize_message(message),
                 content_type="application/json",
-                retry=self._retry_strategy()
+                retry=self._retry_strategy(),
+                order_id=message.get("order_id")
             )
-            published_message_id = future.result(timeout=10) # parametrize timeout
-            self.logger.info(f'Message published with ID: {published_message_id}')
+            self.logger.info(f'Message published!')
+            published_message_id = future.result(timeout=10)
+            self.logger.info(f'Message ID: {published_message_id}')
             return published_message_id
         except Exception:
             self.logger.exception(f'Unexpected error publishing message') 
@@ -58,15 +60,19 @@ class Publisher:
 if __name__ == "__main__":
     import os
     import random
+    import uuid
+    from datetime import datetime
+
     project_id = os.environ.get("PROJECT_ID")
     print(f'Project ID: {project_id}') 
     topic_id =os.environ.get("TOPIC_ID")
     print(f'Topic ID: {topic_id}')
     message = {
-        "id": random.randint(1, 10_000),
+        "order_id": str(uuid.uuid4()),
         "name": f"Product {random.randint(1, 10_000)}",
         "price": random.randint(1, 100),
-        "stock": random.randint(1, 1_000)
+        "stock": random.randint(1, 1_000),
+        "timestamp": datetime.now().isoformat()
     }
     print(f'Message: {message}')
     publisher = Publisher()

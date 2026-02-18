@@ -10,6 +10,7 @@ from google.api_core.exceptions import (
 )
 from google.api_core.retry import Retry, if_exception_type
 from tenacity import retry, stop_after_delay, wait_random_exponential, retry_if_exception_type
+from idempotency_handler import IdempotencyHandler
 
 RETRYABLE_EXCEPTIONS = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted, NotFound)
 
@@ -22,17 +23,18 @@ class Subscriber:
         self.logger = logging.getLogger('Subscriber')
         self.client = pubsub_v1.SubscriberClient()
     
-    @retry(
-        wait=wait_random_exponential(max=30),
-        stop=(stop_after_delay(90)),
-        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
-        reraise=True
-    )
+    # @retry(
+    #     wait=wait_random_exponential(max=30),
+    #     stop=(stop_after_delay(90)),
+    #     retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
+    #     reraise=True
+    # )
     def listen_topic(self, project_id: str, topic_id: str) -> None:
         topic_path = self.client.topic_path(project_id, topic_id)
         try:
+            flow_control = pubsub_v1.types.FlowControl(max_messages=100)
             subscription_path = self._get_subscription_path(project_id=project_id, topic_id=topic_id, topic_path=topic_path)
-            future_listener = self.client.subscribe(subscription_path, callback=self._callback)
+            future_listener = self.client.subscribe(subscription_path, callback=self._callback, flow_control=flow_control)
             self.logger.info(f'Listening on `{subscription_path}`...')
             future_listener.result()
         except RETRYABLE_EXCEPTIONS as e:
@@ -48,7 +50,12 @@ class Subscriber:
         subscription_id = f'{topic_id}-sub' # Assumes the subscription name will be `<topic_id>-sub`
         subscription_path = self.client.subscription_path(project_id, subscription_id)
         try:
-            self.client.create_subscription(name=subscription_path, topic=topic_path, retry=self._retry_strategy())
+            self.client.create_subscription(
+                name=subscription_path,
+                topic=topic_path,
+                retry=self._retry_strategy(),
+                ack_deadline_seconds=60
+            )
             self.logger.info(f'Subscription created: {subscription_path}')
             return subscription_path
         except AlreadyExists:
@@ -67,11 +74,28 @@ class Subscriber:
 
     def _callback(self, message: str | dict) -> None:
         try:
-            self.logger.info(f'Message received: {message.data.decode("utf-8")}')
-            message.ack()
-        except Exception as e:
+            self.logger.info(f'Message received with:\nMessage ID: {message.message_id}\nMessage Data: {message.data.decode("utf-8")}\nMessage Attributes: {message.attributes}')
+            idempotency_handler = IdempotencyHandler()
+            if idempotency_handler.check_message_exists(order_id=message.attributes['order_id']):
+                self.logger.info(f'Message with order_id={message.attributes["order_id"]} already processed! Skipping...')
+                return
+            idempotency_handler.store_message(order_id=message.attributes['order_id'], message_id=message.message_id, message_data=message.data.decode("utf-8"))
+
+            ack_future = message.ack_with_response()
+            ack_successful = ack_future.result().name == 'SUCCESS'
+
+            if ack_successful:
+                idempotency_handler.update_message_ack_status(order_id=message.attributes['order_id'], ack_status=True)
+                self.logger.info(f'Message acknowledged!')
+            else:
+                self.logger.error(f'Message not acknowledged!')
+                message.nack()
+                idempotency_handler.update_message_ack_status(order_id=message.attributes['order_id'], ack_status=False)
+        except Exception:
+            self.logger.error(f'Message not acknowledged!')
             message.nack()
-            raise e
+            idempotency_handler.update_message_ack_status(order_id=message.attributes['order_id'], ack_status=False)
+            raise
 
 
 if __name__ == "__main__":
