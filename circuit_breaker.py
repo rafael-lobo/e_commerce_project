@@ -1,5 +1,6 @@
 import time
 import functools
+import threading
 from enum import Enum
 import logging
 
@@ -35,26 +36,29 @@ class CircuitBreaker:
         self.failure_count = 0
         self.success_count = 0
         self.opened_since = None
+        self._lock = threading.Lock()
 
     def call(self, func, *args, **kwargs):
-        if not self._can_pass_through(): raise RuntimeError("Circuit is open")
+        with self._lock:
+            if not self._can_pass_through():
+                raise RuntimeError("Circuit is open")
 
         try:
             result = func(*args, **kwargs)
+            with self._lock:
+                self._handle_success()
             return result
         except self.expected_exceptions as e:
-            self._handle_failure(e)
+            with self._lock:
+                self._handle_failure()
             raise
-
-        self._handle_success()
-        return result
 
     def _can_pass_through(self) -> bool:
         if self.state == State.CLOSED:
             return True
         
         if self.state == State.OPEN:
-            if (time.time() - self.opened_since) < self.recovery_timeout:
+            if (time.time() - self.opened_since) >= self.recovery_timeout:
                 self._transition_to_half_open()
                 return True
             return False
@@ -105,8 +109,8 @@ class CircuitBreaker:
                 self.logger.info("Circuit closed due to success in half-open state.")
 
 
-def __call__(self, func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        return self.call(func, *args, **kwargs)
-    return wrapper
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            return self.call(func, *args, **kwargs)
+        return wrapper
