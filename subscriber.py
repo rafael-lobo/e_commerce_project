@@ -24,12 +24,12 @@ class Subscriber:
         self.logger = logging.getLogger('Subscriber')
         self.client = pubsub_v1.SubscriberClient()
     
-    # @retry(
-    #     wait=wait_random_exponential(max=30),
-    #     stop=(stop_after_delay(90)),
-    #     retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
-    #     reraise=True
-    # )
+    @retry(
+        wait=wait_random_exponential(max=5),
+        stop=(stop_after_delay(10)),
+        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
+        reraise=True
+    )
     def listen_topic(self, project_id: str, topic_id: str) -> None:
         topic_path = self.client.topic_path(project_id, topic_id)
         try:
@@ -40,6 +40,7 @@ class Subscriber:
             future_listener.result()
         except RETRYABLE_EXCEPTIONS as e:
             self.logger.error(f'Retryable exception: {e}. Trying again...')
+            raise
         except KeyboardInterrupt:
             self.logger.info(f'Stopping subscriber...')
             future_listener.cancel()
@@ -54,7 +55,7 @@ class Subscriber:
             self.client.create_subscription(
                 name=subscription_path,
                 topic=topic_path,
-                retry=self._retry_strategy(),
+                # retry=self._retry_strategy(),
                 ack_deadline_seconds=60
             )
             self.logger.info(f'Subscription created: {subscription_path}')
@@ -63,15 +64,15 @@ class Subscriber:
             self.logger.info(f'Subscription already exists: {subscription_path}')
             return subscription_path
     
-    def _retry_strategy(self) -> Retry:
-        return Retry(
-            predicate=if_exception_type(RETRYABLE_EXCEPTIONS),
-            initial=0.1,
-            maximum=5,
-            multiplier=2,
-            timeout=10,
-            on_error=(lambda e: f"Retryable error {e}, trying again...")
-        )
+    # def _retry_strategy(self) -> Retry:
+    #     return Retry(
+    #         predicate=if_exception_type(RETRYABLE_EXCEPTIONS),
+    #         initial=0.1,
+    #         maximum=5,
+    #         multiplier=2,
+    #         timeout=10,
+    #         on_error=(lambda e: f"Retryable error {e}, trying again...")
+    #     )
 
     def _callback(self, message: str | dict) -> None:
         try:
