@@ -57,7 +57,7 @@ class Publisher:
         raise TypeError(f'Message must be a string or a JSON, got {type(message)}')
 
 
-if __name__ == "__main__":
+def _run():
     import os
     import random
     import uuid
@@ -78,3 +78,13 @@ if __name__ == "__main__":
     publisher = Publisher()
     result = publisher.publish_message(project_id=project_id, topic_id=topic_id, message=message)
 
+if __name__ == "__main__":
+    from concurrent.futures import ThreadPoolExecutor
+
+    if input("Parallel? (y/n): ").lower() == 'y':
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(_run) for _ in range(10)]
+            for future in futures:
+                future.result()
+    else:
+        _run()

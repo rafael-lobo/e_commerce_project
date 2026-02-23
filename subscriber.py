@@ -11,6 +11,7 @@ from google.api_core.exceptions import (
 from google.api_core.retry import Retry, if_exception_type
 from tenacity import retry, stop_after_delay, wait_random_exponential, retry_if_exception_type
 from idempotency_handler import IdempotencyHandler
+import time
 
 RETRYABLE_EXCEPTIONS = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted, NotFound)
 
@@ -76,10 +77,17 @@ class Subscriber:
         try:
             self.logger.info(f'Message received with:\nMessage ID: {message.message_id}\nMessage Data: {message.data.decode("utf-8")}\nMessage Attributes: {message.attributes}')
             idempotency_handler = IdempotencyHandler()
-            if idempotency_handler.check_message_exists(order_id=message.attributes['order_id']):
+            message_exists = idempotency_handler.check_message_exists(order_id=message.attributes['order_id'])
+            if message_exists:
                 self.logger.info(f'Message with order_id={message.attributes["order_id"]} already processed! Skipping...')
                 return
-            idempotency_handler.store_message(order_id=message.attributes['order_id'], message_id=message.message_id, message_data=message.data.decode("utf-8"))
+            idempotency_handler.store_message(
+                order_id=message.attributes['order_id'], 
+                message_id=message.message_id, 
+                message_data=message.data.decode("utf-8")
+            )
+
+            time.sleep(2) # simulate processing time
 
             ack_future = message.ack_with_response()
             ack_successful = ack_future.result().name == 'SUCCESS'
@@ -97,8 +105,7 @@ class Subscriber:
             idempotency_handler.update_message_ack_status(order_id=message.attributes['order_id'], ack_status=False)
             raise
 
-
-if __name__ == "__main__":
+def _run():
     import os
     project_id = os.environ.get("PROJECT_ID")
     print(f'Project ID: {project_id}') 
@@ -106,3 +113,7 @@ if __name__ == "__main__":
     print(f'Topic ID: {topic_id}') 
     subscriber = Subscriber()
     result = subscriber.listen_topic(project_id=project_id, topic_id=topic_id)
+
+if __name__ == "__main__":
+    _run()
+

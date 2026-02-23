@@ -25,7 +25,7 @@ class IdempotencyHandler:
                 VALUES ('{order_id}', '{message_id}', '{message_data}', NULL, '{datetime.now().isoformat()}')
             """)
             self.conn.commit()
-            self.logger.info(f'Message stored successfully!')
+            self.logger.info(f'Message with order_id={order_id} stored successfully!')
         except Exception:
             self.logger.exception(f'Unexpected error storing message') 
             raise
