@@ -4,7 +4,7 @@ from datetime import datetime
 
 class IdempotencyHandler:
     def __init__(self) -> None:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger('IdempotencyHandler')
 
         self.conn = duckdb.connect(database='./processed_messages.db', read_only=False)

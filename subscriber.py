@@ -20,7 +20,7 @@ class Subscriber:
     Subscriber class to listen to messages from a Pub/Sub topic.
     """
     def __init__(self) -> None:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger('Subscriber')
         self.client = pubsub_v1.SubscriberClient()
     
@@ -80,7 +80,8 @@ class Subscriber:
             idempotency_handler = IdempotencyHandler()
             message_exists = idempotency_handler.check_message_exists(order_id=message.attributes['order_id'])
             if message_exists:
-                self.logger.info(f'Message with order_id={message.attributes["order_id"]} already processed! Skipping...')
+                self.logger.info(f'Message with order_id={message.attributes["order_id"]} already processed! Acking and skipping processing...')
+                message.ack()
                 return
             idempotency_handler.store_message(
                 order_id=message.attributes['order_id'], 

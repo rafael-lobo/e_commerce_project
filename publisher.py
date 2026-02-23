@@ -16,7 +16,7 @@ class Publisher:
     Publisher class to publish messages to a Pub/Sub topic.
     """
     def __init__(self) -> None:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger('Publisher')
         self.client = pubsub_v1.PublisherClient()
 
