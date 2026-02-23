@@ -8,6 +8,7 @@ class IdempotencyHandler:
         self.logger = logging.getLogger('IdempotencyHandler')
 
         self.conn = duckdb.connect(database='./processed_messages.db', read_only=False)
+        # statement below for dev only
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS processed_messages (
                 order_id VARCHAR PRIMARY KEY, 
