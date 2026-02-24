@@ -1,15 +1,15 @@
 ## Requirements
 ### Must Include
-- Pub/Sub event-driven pipeline
-- Idempotent processing
-- Retry system with backoff
-- Firestore retry queue
-- Dead Letter Queue
-- Circuit breaker for payment API
-- Structured logging
-- BigQuery analytics
-- Looker dashboard
-- Cancellation alert
+- [x] Pub/Sub event-driven pipeline
+- [x] Idempotent processing
+- [x] Retry system with backoff
+- [ ] Firestore retry queue
+- [x] Dead Letter Queue
+- [ ] Circuit breaker for payment API
+- [x] Structured logging
+- [ ] BigQuery analytics
+- [ ] Looker dashboard
+- [ ] Cancellation alert
 
 ### Final Architecture
 ```

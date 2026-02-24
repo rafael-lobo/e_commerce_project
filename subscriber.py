@@ -53,32 +53,13 @@ class Subscriber:
         subscription_path = self.client.subscription_path(project_id, subscription_id)
         try:
             request = {'name': subscription_path, 'topic': topic_path, 'ack_deadline_seconds': 60} # To create dead-letter topic, we need to add dead_letter_policy to the subscription (https://docs.cloud.google.com/pubsub/docs/dead-letter-topics#set_a_new_dead_letter_topic)
-            self.client.create_subscription( 
-                request=request,
-                # retry=self._retry_strategy(),
-            )
+            self.client.create_subscription(request=request)
             self.logger.info(f'Subscription created: {subscription_path}')
             return subscription_path
         except AlreadyExists:
             self.logger.info(f'Subscription already exists: {subscription_path}')
             return subscription_path
-    
-    # def _retry_strategy(self) -> Retry:
-    #     return Retry(
-    #         predicate=if_exception_type(RETRYABLE_EXCEPTIONS),
-    #         initial=0.1,
-    #         maximum=5,
-    #         multiplier=2,
-    #         timeout=10,
-    #         on_error=(lambda e: self.logger.warning(f"Retryable error {e}, trying again..."))
-    #     )
 
-    @retry(
-        wait=wait_random_exponential(max=10),
-        stop=(stop_after_delay(10)),
-        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
-        reraise=True
-    )
     def _callback(self, message: str | dict) -> None:
         try:
             self.logger.info(f'Message received with:\nMessage ID: {message.message_id}\nMessage Data: {message.data.decode("utf-8")}\nMessage Attributes: {message.attributes}')
