@@ -11,6 +11,7 @@ from google.api_core.exceptions import (
 from google.api_core.retry import Retry, if_exception_type
 from tenacity import retry, stop_after_delay, wait_random_exponential, retry_if_exception_type
 from idempotency_handler import IdempotencyHandler
+from processor import Processor
 import time
 
 RETRYABLE_EXCEPTIONS = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted, NotFound)
@@ -33,7 +34,7 @@ class Subscriber:
     def listen_topic(self, project_id: str, topic_id: str) -> None:
         topic_path = self.client.topic_path(project_id, topic_id)
         try:
-            flow_control = pubsub_v1.types.FlowControl(max_messages=100)
+            flow_control = pubsub_v1.types.FlowControl(max_messages=2) # accepts 2 messages at a time
             subscription_path = self._get_subscription_path(project_id=project_id, topic_id=topic_id, topic_path=topic_path)
             future_listener = self.client.subscribe(subscription_path, callback=self._callback, flow_control=flow_control)
             self.logger.info(f'Listening on `{subscription_path}`...')
@@ -78,8 +79,8 @@ class Subscriber:
         try:
             self.logger.info(f'Message received with:\nMessage ID: {message.message_id}\nMessage Data: {message.data.decode("utf-8")}\nMessage Attributes: {message.attributes}')
             idempotency_handler = IdempotencyHandler()
-            message_exists = idempotency_handler.check_message_exists(order_id=message.attributes['order_id'])
-            if message_exists:
+            ack_message_exists = idempotency_handler.check_ack_message_exists(order_id=message.attributes['order_id'])
+            if ack_message_exists:
                 self.logger.info(f'Message with order_id={message.attributes["order_id"]} already processed! Acking and skipping processing...')
                 message.ack()
                 return
@@ -89,7 +90,8 @@ class Subscriber:
                 message_data=message.data.decode("utf-8")
             )
 
-            time.sleep(2) # simulate processing time
+            processor = Processor()
+            processing_result = processor.run(message=message.data.decode("utf-8"))
 
             ack_future = message.ack_with_response()
             ack_successful = ack_future.result().name == 'SUCCESS'

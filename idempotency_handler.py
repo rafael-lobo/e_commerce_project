@@ -4,7 +4,6 @@ from datetime import datetime
 
 class IdempotencyHandler:
     def __init__(self) -> None:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger('IdempotencyHandler')
 
         self.conn = duckdb.connect(database='./processed_messages.db', read_only=False)
@@ -31,10 +30,10 @@ class IdempotencyHandler:
             self.logger.exception(f'Unexpected error storing message') 
             raise
     
-    def check_message_exists(self, order_id: str) -> bool:
+    def check_ack_message_exists(self, order_id: str) -> bool:
         try:
             result = self.conn.execute(f"""
-                SELECT order_id FROM processed_messages WHERE order_id = '{order_id}'
+                SELECT order_id FROM processed_messages WHERE order_id = '{order_id}' AND acknowledged = TRUE
             """).fetchone()
             return result is not None
         except Exception:
