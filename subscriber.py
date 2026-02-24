@@ -25,12 +25,11 @@ class Subscriber:
         self.logger = logging.getLogger('Subscriber')
         self.client = pubsub_v1.SubscriberClient()
     
-    @retry(
-        wait=wait_random_exponential(max=5),
-        stop=(stop_after_delay(10)),
-        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
-        reraise=True
-    )
+    # @retry(
+    #     wait=wait_random_exponential(max=5),
+    #     stop=(stop_after_delay(10)),
+    #     retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS)
+    # )
     def listen_topic(self, project_id: str, topic_id: str) -> None:
         topic_path = self.client.topic_path(project_id, topic_id)
         try:
@@ -39,25 +38,24 @@ class Subscriber:
             future_listener = self.client.subscribe(subscription_path, callback=self._callback, flow_control=flow_control)
             self.logger.info(f'Listening on `{subscription_path}`...')
             future_listener.result()
-        except RETRYABLE_EXCEPTIONS as e:
-            self.logger.error(f'Retryable exception: {e}. Trying again...')
-            raise
+        # except RETRYABLE_EXCEPTIONS as e:
+        #     self.logger.error(f'Retryable exception: {e}. Trying again...')
+        #     raise
         except KeyboardInterrupt:
             self.logger.info(f'Stopping subscriber...')
             future_listener.cancel()
         except Exception:
-            self.logger.exception(f'Unexpected Error.')
+            self.logger.exception(f'Unexpected error listening to topic {topic_path}.')
             raise
 
     def _get_subscription_path(self, project_id: str, topic_id: str, topic_path: str):
         subscription_id = f'{topic_id}-sub' # Assumes the subscription name will be `<topic_id>-sub`
         subscription_path = self.client.subscription_path(project_id, subscription_id)
         try:
-            self.client.create_subscription(
-                name=subscription_path,
-                topic=topic_path,
+            request = {'name': subscription_path, 'topic': topic_path, 'ack_deadline_seconds': 60} # To create dead-letter topic, we need to add dead_letter_policy to the subscription (https://docs.cloud.google.com/pubsub/docs/dead-letter-topics#set_a_new_dead_letter_topic)
+            self.client.create_subscription( 
+                request=request,
                 # retry=self._retry_strategy(),
-                ack_deadline_seconds=60
             )
             self.logger.info(f'Subscription created: {subscription_path}')
             return subscription_path
@@ -72,23 +70,33 @@ class Subscriber:
     #         maximum=5,
     #         multiplier=2,
     #         timeout=10,
-    #         on_error=(lambda e: f"Retryable error {e}, trying again...")
+    #         on_error=(lambda e: self.logger.warning(f"Retryable error {e}, trying again..."))
     #     )
 
+    @retry(
+        wait=wait_random_exponential(max=10),
+        stop=(stop_after_delay(10)),
+        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
+        reraise=True
+    )
     def _callback(self, message: str | dict) -> None:
         try:
             self.logger.info(f'Message received with:\nMessage ID: {message.message_id}\nMessage Data: {message.data.decode("utf-8")}\nMessage Attributes: {message.attributes}')
             idempotency_handler = IdempotencyHandler()
-            ack_message_exists = idempotency_handler.check_ack_message_exists(order_id=message.attributes['order_id'])
-            if ack_message_exists:
+            processed_message_exists = idempotency_handler.check_processed_message_exists(order_id=message.attributes['order_id'])
+            if processed_message_exists:
                 self.logger.info(f'Message with order_id={message.attributes["order_id"]} already processed! Acking and skipping processing...')
                 message.ack()
                 return
-            idempotency_handler.store_message(
-                order_id=message.attributes['order_id'], 
-                message_id=message.message_id, 
-                message_data=message.data.decode("utf-8")
-            )
+
+            message_exists = idempotency_handler.check_message_exists(order_id=message.attributes['order_id'])
+            if not message_exists:
+                self.logger.info(f'Message with order_id={message.attributes["order_id"]} does not exist! Storing message...')
+                idempotency_handler.store_message(
+                    order_id=message.attributes['order_id'], 
+                    message_id=message.message_id, 
+                    message_data=message.data.decode("utf-8")
+                )
 
             processor = Processor()
             processing_result = processor.run(message=message.data.decode("utf-8"))
@@ -97,23 +105,24 @@ class Subscriber:
             ack_successful = ack_future.result().name == 'SUCCESS'
 
             if ack_successful:
-                idempotency_handler.update_message_ack_status(order_id=message.attributes['order_id'], ack_status=True)
+                idempotency_handler.update_message_processed_status(order_id=message.attributes['order_id'], processed_status=True)
                 self.logger.info(f'Message acknowledged!')
             else:
                 self.logger.error(f'Message not acknowledged!')
                 message.nack()
-                idempotency_handler.update_message_ack_status(order_id=message.attributes['order_id'], ack_status=False)
-        except Exception:
-            self.logger.error(f'Message not acknowledged!')
+        except RETRYABLE_EXCEPTIONS as e:
+            self.logger.warning(f'Retryable exception: {e}. Nacking message...')
             message.nack()
-            idempotency_handler.update_message_ack_status(order_id=message.attributes['order_id'], ack_status=False)
-            raise
+        except Exception as e:
+            self.logger.error(f'Unexpected exception: {e}. Nacking message...')
+            message.nack()
 
 def _run():
     import os
     project_id = os.environ.get("PROJECT_ID")
     print(f'Project ID: {project_id}') 
     topic_id = os.environ.get("TOPIC_ID")
+    # topic_id = f'{os.environ.get("TOPIC_ID")}-dlq' # To listen to dead-letter topic
     print(f'Topic ID: {topic_id}') 
     subscriber = Subscriber()
     result = subscriber.listen_topic(project_id=project_id, topic_id=topic_id)

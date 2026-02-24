@@ -12,12 +12,11 @@ from google.api_core.exceptions import AlreadyExists
 """
 class TopicHandler:
     def __init__(self, client: pubsub_v1.PublisherClient):
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
         self.logger = logging.getLogger('TopicHandler')
         self.client = client
 
     
-    def get_topic_path(self, project_id: str, topic_id: str) -> str:
+    def get_or_create_topic(self, project_id: str, topic_id: str) -> str:
         topic_path = self.client.topic_path(project_id, topic_id)
         try:
             self.client.create_topic(name=topic_path)
@@ -29,3 +28,13 @@ class TopicHandler:
         except Exception:
             self.logger.exception(f'Unexpected error creating topic')
             raise
+
+if __name__ == "__main__":
+    import os
+    project_id = os.environ.get("PROJECT_ID")
+    topic_id = os.environ.get("TOPIC_ID")
+    # topic_id = f'{os.environ.get("TOPIC_ID")}-dlq' # To create dead-letter topic
+    client = pubsub_v1.PublisherClient()
+    topic_handler = TopicHandler(client)
+    topic_path = topic_handler.get_or_create_topic(project_id=project_id, topic_id=topic_id)
+    print(f'Topic path: {topic_path}')

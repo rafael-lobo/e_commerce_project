@@ -13,7 +13,7 @@ class IdempotencyHandler:
                 order_id VARCHAR PRIMARY KEY, 
                 message_id VARCHAR, 
                 message_data JSON, 
-                acknowledged BOOLEAN,
+                processed BOOLEAN,
                 created_at TIMESTAMP
             )
         """)
@@ -21,8 +21,8 @@ class IdempotencyHandler:
     def store_message(self, order_id: str, message_id: str, message_data: dict) -> None:
         try:
             self.conn.execute(f"""
-                INSERT INTO processed_messages (order_id, message_id, message_data, acknowledged, created_at)
-                VALUES ('{order_id}', '{message_id}', '{message_data}', NULL, '{datetime.now().isoformat()}')
+                INSERT INTO processed_messages (order_id, message_id, message_data, processed, created_at)
+                VALUES ('{order_id}', '{message_id}', '{message_data}', FALSE, '{datetime.now().isoformat()}')
             """)
             self.conn.commit()
             self.logger.info(f'Message with order_id={order_id} stored successfully!')
@@ -30,23 +30,33 @@ class IdempotencyHandler:
             self.logger.exception(f'Unexpected error storing message') 
             raise
     
-    def check_ack_message_exists(self, order_id: str) -> bool:
+    def check_processed_message_exists(self, order_id: str) -> bool:
         try:
             result = self.conn.execute(f"""
-                SELECT order_id FROM processed_messages WHERE order_id = '{order_id}' AND acknowledged = TRUE
+                SELECT order_id FROM processed_messages WHERE order_id = '{order_id}' AND processed = TRUE
+            """).fetchone()
+            return result is not None
+        except Exception:
+            self.logger.exception(f'Unexpected error checking message') 
+            raise
+
+    def check_message_exists(self, order_id: str) -> bool:
+        try:
+            result = self.conn.execute(f"""
+                SELECT order_id FROM processed_messages WHERE order_id = '{order_id}'
             """).fetchone()
             return result is not None
         except Exception:
             self.logger.exception(f'Unexpected error checking message') 
             raise
     
-    def update_message_ack_status(self, order_id: str, ack_status: bool) -> None:
+    def update_message_processed_status(self, order_id: str, processed_status: bool) -> None:
         try:
             self.conn.execute(f"""
-                UPDATE processed_messages SET acknowledged = {ack_status} WHERE order_id = '{order_id}'
+                UPDATE processed_messages SET processed = {processed_status} WHERE order_id = '{order_id}'
             """)
             self.conn.commit()
-            self.logger.info(f'Message with order_id={order_id} updated with acknowledgment status: {ack_status}')
+            self.logger.info(f'Message with order_id={order_id} updated with processed status: {processed_status}')
         except Exception:
             self.logger.exception(f'Unexpected error updating message') 
             raise

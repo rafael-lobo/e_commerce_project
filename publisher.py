@@ -30,9 +30,8 @@ class Publisher:
                 retry=self._retry_strategy(),
                 order_id=message.get("order_id")
             )
-            self.logger.info(f'Message published!')
             published_message_id = future.result(timeout=10)
-            self.logger.info(f'Message ID: {published_message_id}')
+            self.logger.info(f'Message successfully published with ID: {published_message_id}')
             return published_message_id
         except Exception:
             self.logger.exception(f'Unexpected error publishing message') 
@@ -46,7 +45,7 @@ class Publisher:
             maximum=5,
             multiplier=2,
             timeout=10,
-            on_error=(lambda e: f"Retryable error {e}, trying again...")
+            on_error=(lambda e: self.logger.warning(f"Retryable error {e}, trying again..."))
         )
 
     def _serialize_message(self, message: str | dict | list) -> bytes:
