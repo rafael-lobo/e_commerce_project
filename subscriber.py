@@ -1,5 +1,6 @@
 import logging
 from google.cloud import pubsub_v1
+from google.cloud.pubsub_v1.subscriber import message
 from google.api_core.exceptions import (
     AlreadyExists,
     ServiceUnavailable,       # 503: server temporarily down
@@ -9,12 +10,11 @@ from google.api_core.exceptions import (
     NotFound                  # Sometimes takes a while to process the new subscrition creation
 )
 from google.api_core.retry import Retry, if_exception_type
-from tenacity import retry, stop_after_delay, wait_random_exponential, retry_if_exception_type
-from idempotency_handler import IdempotencyHandler
 from processor import Processor
-import time
+
 
 RETRYABLE_EXCEPTIONS = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted, NotFound)
+
 
 class Subscriber:
     """
@@ -24,12 +24,7 @@ class Subscriber:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger('Subscriber')
         self.client = pubsub_v1.SubscriberClient()
-    
-    # @retry(
-    #     wait=wait_random_exponential(max=5),
-    #     stop=(stop_after_delay(10)),
-    #     retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS)
-    # )
+
     def listen_topic(self, project_id: str, topic_id: str) -> None:
         topic_path = self.client.topic_path(project_id, topic_id)
         try:
@@ -38,9 +33,6 @@ class Subscriber:
             future_listener = self.client.subscribe(subscription_path, callback=self._callback, flow_control=flow_control)
             self.logger.info(f'Listening on `{subscription_path}`...')
             future_listener.result()
-        # except RETRYABLE_EXCEPTIONS as e:
-        #     self.logger.error(f'Retryable exception: {e}. Trying again...')
-        #     raise
         except KeyboardInterrupt:
             self.logger.info(f'Stopping subscriber...')
             future_listener.cancel()
@@ -60,37 +52,13 @@ class Subscriber:
             self.logger.info(f'Subscription already exists: {subscription_path}')
             return subscription_path
 
-    def _callback(self, message: str | dict) -> None:
+    def _callback(self, message: message.Message) -> None:
         try:
             self.logger.info(f'Message received with:\nMessage ID: {message.message_id}\nMessage Data: {message.data.decode("utf-8")}\nMessage Attributes: {message.attributes}')
-            idempotency_handler = IdempotencyHandler()
-            processed_message_exists = idempotency_handler.check_processed_message_exists(order_id=message.attributes['order_id'])
-            if processed_message_exists:
-                self.logger.info(f'Message with order_id={message.attributes["order_id"]} already processed! Acking and skipping processing...')
-                message.ack()
-                return
-
-            message_exists = idempotency_handler.check_message_exists(order_id=message.attributes['order_id'])
-            if not message_exists:
-                self.logger.info(f'Message with order_id={message.attributes["order_id"]} does not exist! Storing message...')
-                idempotency_handler.store_message(
-                    order_id=message.attributes['order_id'], 
-                    message_id=message.message_id, 
-                    message_data=message.data.decode("utf-8")
-                )
-
             processor = Processor()
-            processing_result = processor.run(message=message.data.decode("utf-8"))
-
-            ack_future = message.ack_with_response()
-            ack_successful = ack_future.result().name == 'SUCCESS'
-
-            if ack_successful:
-                idempotency_handler.update_message_processed_status(order_id=message.attributes['order_id'], processed_status=True)
-                self.logger.info(f'Message acknowledged!')
-            else:
-                self.logger.error(f'Message not acknowledged!')
-                message.nack()
+            processor.run(message=message)
+            message.ack()
+            self.logger.info(f'Message acknowledged!')
         except RETRYABLE_EXCEPTIONS as e:
             self.logger.warning(f'Retryable exception: {e}. Nacking message...')
             message.nack()
