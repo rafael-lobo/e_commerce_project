@@ -14,12 +14,6 @@ class Processor:
     def __init__(self):
         self.logger = logging.getLogger('Processor')
 
-    @retry(
-        wait=wait_random_exponential(max=10),
-        stop=(stop_after_delay(10)),
-        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
-        reraise=True
-    )
     def run(self, message: message.Message) -> None:
         try:
             order_id = message.attributes['order_id']
@@ -41,18 +35,30 @@ class Processor:
 
             self._process_message(message)
 
+            idempotency_handler.update_message_processed_status(order_id=order_id, processed_status=True)
+        except RETRYABLE_EXCEPTIONS as e:
+            self.logger.warning(f"Unable to recover from retryable exception: {e}")
+            raise
+        except Exception:
+            self.logger.exception(f"Unexpected error processing message")
+            raise
+    
+    @retry(
+        wait=wait_random_exponential(min=0.5, max=10),
+        stop=(stop_after_delay(10)),
+        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
+        reraise=True
+    )
+    def _process_message(self, message: message.Message) -> None:
+        try:
+            self.logger.info(f"Processing message: {message.data.decode("utf-8")}...")
             # raise ServiceUnavailable('SERVICE UNAVAILABLE') # simulate retryable error
             # raise Exception('UNEXPECTED ERROR') # simulate non-retryable error
-
-            idempotency_handler.update_message_processed_status(order_id=order_id, processed_status=True)
+            time.sleep(2) # simulate processing time
+            self.logger.info(f"Message processed successfully!")
         except RETRYABLE_EXCEPTIONS as e:
             self.logger.warning(f"Retryable exception: {e}. Retrying...")
             raise
         except Exception:
             self.logger.exception(f"Unexpected error processing message")
             raise
-    
-    def _process_message(self, message: message.Message) -> None:
-        self.logger.info(f"Processing message: {message.data.decode("utf-8")}...")
-        time.sleep(2) # simulate processing time
-        self.logger.info(f"Message processed successfully!")

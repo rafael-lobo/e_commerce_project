@@ -59,11 +59,8 @@ class Subscriber:
             processor.run(message=message)
             message.ack()
             self.logger.info(f'Message acknowledged!')
-        except RETRYABLE_EXCEPTIONS as e:
-            self.logger.warning(f'Retryable exception: {e}. Nacking message...')
-            message.nack()
         except Exception as e:
-            self.logger.error(f'Unexpected exception: {e}. Nacking message...')
+            self.logger.error(f'Exception: {e}. Nacking message...')
             message.nack()
 
 def _run():
