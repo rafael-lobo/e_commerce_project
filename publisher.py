@@ -67,6 +67,7 @@ def _run():
     topic_id =os.environ.get("TOPIC_ID")
     print(f'Topic ID: {topic_id}')
     message = {
+        # "order_id": "12345", # simulate idempotency error
         "order_id": str(uuid.uuid4()),
         "name": f"Product {random.randint(1, 10_000)}",
         "price": random.randint(1, 100),

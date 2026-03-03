@@ -1,8 +1,8 @@
 import time
 import functools
 import threading
-from enum import Enum
 import logging
+from enum import Enum
 
 class State(Enum):
     CLOSED = "CLOSED"
@@ -24,7 +24,6 @@ class CircuitBreaker:
         :param half_open_success_threshold: Successes in half-open before closing.
         :param expected_exceptions: Exceptions that count as failures.
         """
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger('CircuitBreaker')
 
         self.failure_threshold = failure_threshold
@@ -112,5 +111,5 @@ class CircuitBreaker:
     def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            return self.call(func, *args, **kwargs)
+            return self.call(func, *args, **kwargs)  # TODO: use async wrapper if async
         return wrapper

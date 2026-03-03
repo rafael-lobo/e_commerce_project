@@ -1,19 +1,9 @@
 import logging
 from google.cloud import pubsub_v1
 from google.cloud.pubsub_v1.subscriber import message
-from google.api_core.exceptions import (
-    AlreadyExists,
-    ServiceUnavailable,       # 503: server temporarily down
-    ResourceExhausted,        # 429: rate limit or quota exceeded
-    InternalServerError,      # 500: server bug
-    Aborted,                  # concurrent update conflict
-    NotFound                  # Sometimes takes a while to process the new subscrition creation
-)
-from google.api_core.retry import Retry, if_exception_type
+from google.api_core.exceptions import AlreadyExists
 from processor import Processor
-
-
-RETRYABLE_EXCEPTIONS = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted, NotFound)
+from firestore_handler import IdempotencyError
 
 
 class Subscriber:
@@ -29,7 +19,7 @@ class Subscriber:
         topic_path = self.client.topic_path(project_id, topic_id)
         try:
             flow_control = pubsub_v1.types.FlowControl(max_messages=2) # accepts 2 messages at a time
-            subscription_path = self._get_subscription_path(project_id=project_id, topic_id=topic_id, topic_path=topic_path)
+            subscription_path = self._get_subscription_path(project_id=project_id, topic_id=topic_id, topic_path=topic_path)            
             future_listener = self.client.subscribe(subscription_path, callback=self._callback, flow_control=flow_control)
             self.logger.info(f'Listening on `{subscription_path}`...')
             future_listener.result()
@@ -59,8 +49,11 @@ class Subscriber:
             processor.run(message=message)
             message.ack()
             self.logger.info(f'Message acknowledged!')
-        except Exception as e:
-            self.logger.error(f'Exception: {e}. Nacking message...')
+        except IdempotencyError:
+            self.logger.warning(f"Message with order_id={message.attributes.get('order_id')} already processed. Acking and skipping.")
+            message.ack()
+        except Exception:
+            self.logger.exception('Exception processing message. Nacking message...')
             message.nack()
 
 def _run():
