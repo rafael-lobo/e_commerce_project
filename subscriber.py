@@ -3,7 +3,7 @@ from google.cloud import pubsub_v1
 from google.cloud.pubsub_v1.subscriber import message
 from google.api_core.exceptions import AlreadyExists
 from processor import Processor
-from firestore_handler import IdempotencyError
+from firestore_handler import IdempotencyError, UnexistingDocumentError
 
 
 class Subscriber:
@@ -52,6 +52,9 @@ class Subscriber:
         except IdempotencyError:
             self.logger.warning(f"Message with order_id={message.attributes.get('order_id')} already processed. Acking and skipping.")
             message.ack()
+        except UnexistingDocumentError:
+            self.logger.warning(f"Message with order_id={message.attributes.get('order_id')} not found in idempotency collection. Nacking...")
+            message.nack()
         except Exception:
             self.logger.exception('Exception processing message. Nacking message...')
             message.nack()

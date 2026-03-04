@@ -8,7 +8,7 @@ from google.api_core.exceptions import (
     InternalServerError,      # 500: server bug
     Aborted                   # concurrent update conflict
 )
-from firestore_handler import FirestoreHandler, IdempotencyError, MarkAsProcessedError
+from firestore_handler import FirestoreHandler, IdempotencyError, MarkAsProcessedError, UnexistingDocumentError
 from google.cloud.pubsub_v1.subscriber import message
 
 
@@ -33,6 +33,8 @@ class Processor:
             raise
         except MarkAsProcessedError:
             raise
+        except UnexistingDocumentError:
+            raise
         except Exception:
             self.logger.exception(f"Unexpected error processing message")
             raise
@@ -46,9 +48,11 @@ class Processor:
     def _process_message(self, message: message.Message) -> None:
         try:
             self.logger.info(f"Processing message: {message.data.decode("utf-8")}...")
+        
             # raise ServiceUnavailable('SERVICE UNAVAILABLE') # simulate retryable error
             # raise Exception('UNEXPECTED ERROR') # simulate non-retryable error
-            time.sleep(2) # simulate processing time
+
+            time.sleep(2) # simulate processing time. For simplicity I'm assuming this non-deterministic external process is has an idempotency key
             self.logger.info(f"Message processed successfully!")
         except RETRYABLE_EXCEPTIONS as e:
             self.logger.warning(f"Retryable exception: {e}. Retrying...")

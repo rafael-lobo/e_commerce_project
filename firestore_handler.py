@@ -4,6 +4,9 @@ from firebase_admin import initialize_app, firestore, get_app, _apps
 class IdempotencyError(Exception):
     pass
 
+class UnexistingDocumentError(Exception):
+    pass
+
 class MarkAsProcessedError(Exception):
     pass
 
@@ -18,14 +21,17 @@ class FirestoreHandler:
         try:
             collection = 'idempotency'
             doc = self.db.collection(collection).document(order_id).get()
+            if not doc.exists: raise UnexistingDocumentError
+
             doc_dict = doc.to_dict() if doc.exists else {}
-            if doc_dict.get("processed", False):
-                raise IdempotencyError
+            if doc_dict.get("processed", False): raise IdempotencyError
             
             self.logger.info(f"Message with order_id={order_id} not processed yet.")
             return
         except IdempotencyError:
             raise IdempotencyError
+        except UnexistingDocumentError:
+            raise UnexistingDocumentError
         except Exception:
             raise
 
