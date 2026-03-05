@@ -9,6 +9,9 @@ class State(Enum):
     OPEN = "OPEN"
     HALF_OPEN = "HALF_OPEN"
 
+class OpenCircuitError(Exception):
+    pass
+
 
 class CircuitBreaker:
     def __init__(
@@ -40,7 +43,7 @@ class CircuitBreaker:
     def call(self, func, *args, **kwargs):
         with self._lock:
             if not self._can_pass_through():
-                raise RuntimeError("Circuit is open")
+                raise OpenCircuitError("Circuit is open")
 
         try:
             result = func(*args, **kwargs)
@@ -87,14 +90,14 @@ class CircuitBreaker:
     def _handle_failure(self) -> None:
         if self.state == State.HALF_OPEN:
             self._transition_to_open()
-            self.logger.info("Circuit opened due to failure in half-open state.")
+            self.logger.warning("Circuit opened due to failure in half-open state.")
             return
 
         if self.state == State.CLOSED:
             self.failure_count += 1
             if self.failure_count >= self.failure_threshold:
+                self.logger.warning(f"Circuit opened due to {self.failure_count} consecutive failures.")
                 self._transition_to_open()
-                self.logger.info(f"Circuit opened due to {self.failure_count} consecutive failures.")
 
     def _handle_success(self) -> None:
         if self.state == State.CLOSED:
@@ -105,7 +108,7 @@ class CircuitBreaker:
             self.success_count += 1
             if self.success_count >= self.half_open_success_threshold:
                 self._transition_to_closed()
-                self.logger.info("Circuit closed due to success in half-open state.")
+                self.logger.warning("Circuit closed due to success in half-open state.")
 
 
     def __call__(self, func):

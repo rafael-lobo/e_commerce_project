@@ -26,7 +26,7 @@ class FirestoreHandler:
             doc_dict = doc.to_dict() if doc.exists else {}
             if doc_dict.get("processed", False): raise IdempotencyError
             
-            self.logger.info(f"Message with order_id={order_id} not processed yet.")
+            self.logger.info(f"Message with order_id={order_id} exists but is not processed yet.")
             return
         except IdempotencyError:
             raise IdempotencyError

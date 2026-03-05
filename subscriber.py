@@ -4,6 +4,7 @@ from google.cloud.pubsub_v1.subscriber import message
 from google.api_core.exceptions import AlreadyExists
 from processor import Processor
 from firestore_handler import IdempotencyError, UnexistingDocumentError
+from circuit_breaker import OpenCircuitError
 
 
 class Subscriber:
@@ -44,19 +45,23 @@ class Subscriber:
 
     def _callback(self, message: message.Message) -> None:
         try:
+            order_id = message.attributes.get('order_id')
             self.logger.info(f'Message received with:\nMessage ID: {message.message_id}\nMessage Data: {message.data.decode("utf-8")}\nMessage Attributes: {message.attributes}')
             processor = Processor()
             processor.run(message=message)
             message.ack()
             self.logger.info(f'Message acknowledged!')
         except IdempotencyError:
-            self.logger.warning(f"Message with order_id={message.attributes.get('order_id')} already processed. Acking and skipping.")
+            self.logger.warning(f"Message with order_id={order_id} already processed. Acking and skipping.")
             message.ack()
         except UnexistingDocumentError:
-            self.logger.warning(f"Message with order_id={message.attributes.get('order_id')} not found in idempotency collection. Nacking...")
+            self.logger.warning(f"Message with order_id={order_id} not found in idempotency collection. Nacking...")
+            message.nack()
+        except OpenCircuitError:
+            self.logger.warning(f"Circuit is open. Nacking message with order_id={order_id}...")
             message.nack()
         except Exception:
-            self.logger.exception('Exception processing message. Nacking message...')
+            self.logger.exception(f'Exception processing message with order_id={order_id}. Nacking message...')
             message.nack()
 
 def _run():

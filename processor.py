@@ -10,6 +10,7 @@ from google.api_core.exceptions import (
 )
 from firestore_handler import FirestoreHandler, IdempotencyError, MarkAsProcessedError, UnexistingDocumentError
 from google.cloud.pubsub_v1.subscriber import message
+from circuit_breaker import CircuitBreaker, OpenCircuitError
 
 
 RETRYABLE_EXCEPTIONS = (ServiceUnavailable, ResourceExhausted, InternalServerError, Aborted)
@@ -35,20 +36,23 @@ class Processor:
             raise
         except UnexistingDocumentError:
             raise
+        except OpenCircuitError:
+            raise
         except Exception:
             self.logger.exception(f"Unexpected error processing message")
             raise
-    
+
     @retry(
         wait=wait_random_exponential(min=0.5, max=10),
         stop=(stop_after_delay(10)),
         retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
         reraise=True
     )
+    @CircuitBreaker()
     def _process_message(self, message: message.Message) -> None:
         try:
             self.logger.info(f"Processing message: {message.data.decode("utf-8")}...")
-        
+
             # raise ServiceUnavailable('SERVICE UNAVAILABLE') # simulate retryable error
             # raise Exception('UNEXPECTED ERROR') # simulate non-retryable error
 
