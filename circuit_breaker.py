@@ -111,8 +111,15 @@ class CircuitBreaker:
                 self.logger.warning("Circuit closed due to success in half-open state.")
 
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            return self.call(func, *args, **kwargs)  # TODO: use async wrapper if async
+def circuit_breaker(func=None, **kwargs):
+    def decorator(f):
+        cb = CircuitBreaker(**kwargs)
+
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs_inner):
+            return cb.call(f, *args, **kwargs_inner)
         return wrapper
+
+    if func is None:
+        return decorator
+    return decorator(func)
