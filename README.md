@@ -5,7 +5,7 @@
 - [x] Retry system with backoff
 - [ ] Firestore retry queue
 - [x] Dead Letter Queue
-- [ ] Circuit breaker for payment API
+- [x] Circuit breaker for payment API
 - [x] Structured logging
 - [ ] BigQuery analytics
 - [ ] Looker dashboard

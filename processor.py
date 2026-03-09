@@ -48,7 +48,7 @@ class Processor:
         retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
         reraise=True
     )
-    @circuit_breaker(failure_threshold=2)
+    @circuit_breaker()
     def _process_message(self, message: message.Message) -> None:
         try:
             self.logger.info(f"Processing message: {message.data.decode("utf-8")}...")
